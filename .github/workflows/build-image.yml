@@ -1,0 +1,45 @@
+name: Build CM4 Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Packer
+      uses: hashicorp/setup-packer@main
+
+    - name: Install QEMU
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-system-arm qemu-efi-aarch64 qemu-utils
+
+    - name: Set version
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        else
+          echo "VERSION=dev-$(git rev-parse --short $GITHUB_SHA)" >> $GITHUB_ENV
+        fi
+
+    - name: Initialize Packer
+      run: packer init .github/files/cm4-image.pkr.hcl
+
+    - name: Build CM4 Image
+      run: |
+        PACKER_LOG=1 packer build -var "version=${{ env.VERSION }}" .github/files/cm4-image.pkr.hcl
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: cm4-custom-image-${{ env.VERSION }}
+        path: output/cm4-custom-image-${{ env.VERSION }}.img
