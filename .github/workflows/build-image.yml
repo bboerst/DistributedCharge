@@ -41,13 +41,27 @@ jobs:
     - name: Customize image
       run: |
         sudo cp /usr/bin/qemu-aarch64-static /mnt/rpi/usr/bin/
+        sudo mount -t proc none /mnt/rpi/proc
+        sudo mount -t sysfs none /mnt/rpi/sys
+        sudo mount -o bind /dev /mnt/rpi/dev
+        
+        # Create a new resolv.conf file
+        sudo mkdir -p /mnt/rpi/etc
+        sudo touch /mnt/rpi/etc/resolv.conf
+        echo "nameserver 8.8.8.8" | sudo tee /mnt/rpi/etc/resolv.conf
+        echo "nameserver 8.8.4.4" | sudo tee -a /mnt/rpi/etc/resolv.conf
+        
         sudo chroot /mnt/rpi /bin/bash << EOF
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          
           # Create dc user and set up sudo
           useradd -m -s /bin/bash dc
           echo "dc ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dc
           
           apt-get update
           apt-get install -y x11-xserver-utils xterm xinit vim git jq python3-pip build-essential cmake g++ libpcsclite-dev libcurl4-openssl-dev python3-pip libmbim-utils network-manager can-utils python3-tk python3-zmq
+          
           pip3 install python-can cantools can-isotp pillow pydbus gpiozero RPi.GPIO
           pip3 install git+https://github.com/AndySchroder/RPi_mcp3008
           pip3 install git+https://github.com/AndySchroder/helpers2
@@ -73,14 +87,21 @@ jobs:
           chown -R dc:dc /home/dc/.dc
           
           echo "@reboot xinit /home/dc/Desktop/DistributedCharge/Launcher-car" | crontab -u dc -
-          sed -i -e 's/allowed_users=console/allowed_users=anybody/g' /etc/X11/Xwrapper.config
+          if [ -f /etc/X11/Xwrapper.config ]; then
+            sed -i -e 's/allowed_users=console/allowed_users=anybody/g' /etc/X11/Xwrapper.config
+          else
+            echo "allowed_users=anybody" > /etc/X11/Xwrapper.config
+          fi
         EOF
 
     - name: Unmount image
       run: |
+        sudo umount /mnt/rpi/dev
+        sudo umount /mnt/rpi/sys
+        sudo umount /mnt/rpi/proc
         sudo umount /mnt/rpi
         sudo losetup -d ${LOOP_DEVICE}
-
+          
     - name: Compress image
       run: xz -z ubuntu-22.04.4-preinstalled-server-arm64+raspi.img
 
