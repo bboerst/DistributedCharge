@@ -42,27 +42,37 @@ jobs:
       run: |
         sudo cp /usr/bin/qemu-aarch64-static /mnt/rpi/usr/bin/
         sudo chroot /mnt/rpi /bin/bash << EOF
+          # Create dc user and set up sudo
+          useradd -m -s /bin/bash dc
+          echo "dc ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dc
+          
           apt-get update
           apt-get install -y x11-xserver-utils xterm xinit vim git jq python3-pip build-essential cmake g++ libpcsclite-dev libcurl4-openssl-dev python3-pip libmbim-utils network-manager can-utils python3-tk python3-zmq
           pip3 install python-can cantools can-isotp pillow pydbus gpiozero RPi.GPIO
           pip3 install git+https://github.com/AndySchroder/RPi_mcp3008
           pip3 install git+https://github.com/AndySchroder/helpers2
           pip3 install git+https://github.com/AndySchroder/lnd-grpc-client.git
-          mkdir -p /home/ubuntu/Desktop
-          cd /home/ubuntu/Desktop
+          
+          mkdir -p /home/dc/Desktop
+          cd /home/dc/Desktop
           git clone https://github.com/joshwardell/model3dbc
           cd model3dbc
           git reset --hard 7ec978ca618f13be375f0be9b2f25c19da500d3f
           cd ..
           git clone https://github.com/AndySchroder/DistributedCharge
+          chown -R dc:dc /home/dc/Desktop
+          
           echo 'dtoverlay=mcp2515-can1,oscillator=16000000,interrupt=23' >> /boot/firmware/config.txt
           echo 'dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=24' >> /boot/firmware/config.txt
           echo 'dtoverlay=spi1-1cs' >> /boot/firmware/config.txt
           echo '[Match]\nName=can0\n\n[CAN]\nBitRate=33300\n\n[Link]\nRequiredForOnline=no\n' > /etc/systemd/network/80-can0.network
           echo '[Match]\nName=can1\n\n[CAN]\nBitRate=500000\n\n[Link]\nRequiredForOnline=no\n' > /etc/systemd/network/80-can1.network
-          mkdir -p /home/ubuntu/.dc
-          cp /home/ubuntu/Desktop/DistributedCharge/SampleConfig/Config.yaml /home/ubuntu/.dc/
-          echo "@reboot xinit /home/ubuntu/Desktop/DistributedCharge/Launcher-car" | crontab -
+          
+          mkdir -p /home/dc/.dc
+          cp /home/dc/Desktop/DistributedCharge/SampleConfig/Config.yaml /home/dc/.dc/
+          chown -R dc:dc /home/dc/.dc
+          
+          echo "@reboot xinit /home/dc/Desktop/DistributedCharge/Launcher-car" | crontab -u dc -
           sed -i -e 's/allowed_users=console/allowed_users=anybody/g' /etc/X11/Xwrapper.config
         EOF
 
