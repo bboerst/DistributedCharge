@@ -47,12 +47,18 @@ jobs:
         
         sudo cp /usr/bin/qemu-aarch64-static /mnt/rpi/usr/bin/
         
-        # Check the content of the mounted image
+        # Check the content of the mounted image and the /etc directory
         sudo ls -la /mnt/rpi
+        sudo ls -la /mnt/rpi/etc
         
-        # Create a new resolv.conf file
-        sudo sh -c 'echo "nameserver 8.8.8.8" > /mnt/rpi/etc/resolv.conf'
+        # Try to create resolv.conf in a different way
+        sudo touch /mnt/rpi/etc/resolv.conf
+        sudo sh -c 'echo "nameserver 8.8.8.8" >> /mnt/rpi/etc/resolv.conf'
         sudo sh -c 'echo "nameserver 8.8.4.4" >> /mnt/rpi/etc/resolv.conf'
+        
+        # Check if resolv.conf was created
+        sudo ls -la /mnt/rpi/etc/resolv.conf
+        sudo cat /mnt/rpi/etc/resolv.conf
         
         # Mount necessary filesystems
         sudo mount -t proc none /mnt/rpi/proc
