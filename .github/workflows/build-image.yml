@@ -1,45 +1,104 @@
-name: Build CM4 Image
+name: Build Custom Raspberry Pi Image
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*.*.*'
   pull_request:
+    branches: [ master ]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v2
 
-    - name: Set up Packer
-      uses: hashicorp/setup-packer@main
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
 
-    - name: Install QEMU
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y qemu-system-arm qemu-efi-aarch64 qemu-utils
+        sudo apt-get install -y qemu-user-static binfmt-support
 
-    - name: Set version
+    - name: Download base Raspberry Pi image
       run: |
-        if [[ $GITHUB_REF == refs/tags/* ]]; then
-          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-        else
-          echo "VERSION=dev-$(git rev-parse --short $GITHUB_SHA)" >> $GITHUB_ENV
-        fi
+        wget http://cdimage.ubuntu.com/releases/22.04.4/release/ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz
+        xz -d ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz
 
-    - name: Initialize Packer
-      run: packer init .github/files/cm4-image.pkr.hcl
-
-    - name: Build CM4 Image
+    - name: Mount image
       run: |
-        PACKER_LOG=1 packer build -var "version=${{ env.VERSION }}" .github/files/cm4-image.pkr.hcl
+        sudo losetup -fP ubuntu-22.04.4-preinstalled-server-arm64+raspi.img
+        LOOP_DEVICE=$(losetup -a | grep 'ubuntu-22.04.4-preinstalled-server-arm64+raspi.img' | cut -d: -f1)
+        sudo mkdir -p /mnt/rpi
+        sudo mount ${LOOP_DEVICE}p2 /mnt/rpi
 
-    - name: Upload Artifact
+    - name: Customize image
+      run: |
+        sudo cp /usr/bin/qemu-aarch64-static /mnt/rpi/usr/bin/
+        sudo chroot /mnt/rpi /bin/bash << EOF
+          apt-get update
+          apt-get install -y x11-xserver-utils xterm xinit vim git jq python3-pip build-essential cmake g++ libpcsclite-dev libcurl4-openssl-dev python3-pip libmbim-utils network-manager can-utils python3-tk python3-zmq
+          pip3 install python-can cantools can-isotp pillow pydbus gpiozero RPi.GPIO
+          pip3 install git+https://github.com/AndySchroder/RPi_mcp3008
+          pip3 install git+https://github.com/AndySchroder/helpers2
+          pip3 install git+https://github.com/AndySchroder/lnd-grpc-client.git
+          mkdir -p /home/ubuntu/Desktop
+          cd /home/ubuntu/Desktop
+          git clone https://github.com/joshwardell/model3dbc
+          cd model3dbc
+          git reset --hard 7ec978ca618f13be375f0be9b2f25c19da500d3f
+          cd ..
+          git clone https://github.com/AndySchroder/DistributedCharge
+          echo 'dtoverlay=mcp2515-can1,oscillator=16000000,interrupt=23' >> /boot/firmware/config.txt
+          echo 'dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=24' >> /boot/firmware/config.txt
+          echo 'dtoverlay=spi1-1cs' >> /boot/firmware/config.txt
+          echo '[Match]\nName=can0\n\n[CAN]\nBitRate=33300\n\n[Link]\nRequiredForOnline=no\n' > /etc/systemd/network/80-can0.network
+          echo '[Match]\nName=can1\n\n[CAN]\nBitRate=500000\n\n[Link]\nRequiredForOnline=no\n' > /etc/systemd/network/80-can1.network
+          mkdir -p /home/ubuntu/.dc
+          cp /home/ubuntu/Desktop/DistributedCharge/SampleConfig/Config.yaml /home/ubuntu/.dc/
+          echo "@reboot xinit /home/ubuntu/Desktop/DistributedCharge/Launcher-car" | crontab -
+          sed -i -e 's/allowed_users=console/allowed_users=anybody/g' /etc/X11/Xwrapper.config
+        EOF
+
+    - name: Unmount image
+      run: |
+        sudo umount /mnt/rpi
+        sudo losetup -d ${LOOP_DEVICE}
+
+    - name: Compress image
+      run: xz -z ubuntu-22.04.4-preinstalled-server-arm64+raspi.img
+
+    - name: Upload artifact
       uses: actions/upload-artifact@v2
       with:
-        name: cm4-custom-image-${{ env.VERSION }}
-        path: output/cm4-custom-image-${{ env.VERSION }}.img
+        name: custom-rpi-image
+        path: ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./ubuntu-22.04.4-preinstalled-server-arm64+raspi.img.xz
+        asset_name: custom-rpi-image.img.xz
+        asset_content_type: application/x-xz
