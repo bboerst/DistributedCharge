@@ -41,20 +41,18 @@ jobs:
     - name: Customize image
       run: |
         set -x  # Enable debugging output
+        
+        # Remount the filesystem as read-write
+        sudo mount -o remount,rw /mnt/rpi
+        
         sudo cp /usr/bin/qemu-aarch64-static /mnt/rpi/usr/bin/
         
         # Check the content of the mounted image
         sudo ls -la /mnt/rpi
         
-        # Create necessary directories if they don't exist
-        sudo mkdir -p /mnt/rpi/etc
-        sudo mkdir -p /mnt/rpi/proc
-        sudo mkdir -p /mnt/rpi/sys
-        sudo mkdir -p /mnt/rpi/dev
-        
         # Create a new resolv.conf file
-        echo "nameserver 8.8.8.8" | sudo tee /mnt/rpi/etc/resolv.conf
-        echo "nameserver 8.8.4.4" | sudo tee -a /mnt/rpi/etc/resolv.conf
+        sudo sh -c 'echo "nameserver 8.8.8.8" > /mnt/rpi/etc/resolv.conf'
+        sudo sh -c 'echo "nameserver 8.8.4.4" >> /mnt/rpi/etc/resolv.conf'
         
         # Mount necessary filesystems
         sudo mount -t proc none /mnt/rpi/proc
