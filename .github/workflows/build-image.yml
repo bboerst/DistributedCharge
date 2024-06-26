@@ -40,16 +40,26 @@ jobs:
 
     - name: Customize image
       run: |
+        set -x  # Enable debugging output
         sudo cp /usr/bin/qemu-aarch64-static /mnt/rpi/usr/bin/
+        
+        # Check the content of the mounted image
+        sudo ls -la /mnt/rpi
+        
+        # Create necessary directories if they don't exist
+        sudo mkdir -p /mnt/rpi/etc
+        sudo mkdir -p /mnt/rpi/proc
+        sudo mkdir -p /mnt/rpi/sys
+        sudo mkdir -p /mnt/rpi/dev
+        
+        # Create a new resolv.conf file
+        echo "nameserver 8.8.8.8" | sudo tee /mnt/rpi/etc/resolv.conf
+        echo "nameserver 8.8.4.4" | sudo tee -a /mnt/rpi/etc/resolv.conf
+        
+        # Mount necessary filesystems
         sudo mount -t proc none /mnt/rpi/proc
         sudo mount -t sysfs none /mnt/rpi/sys
         sudo mount -o bind /dev /mnt/rpi/dev
-        
-        # Create a new resolv.conf file
-        sudo mkdir -p /mnt/rpi/etc
-        sudo touch /mnt/rpi/etc/resolv.conf
-        echo "nameserver 8.8.8.8" | sudo tee /mnt/rpi/etc/resolv.conf
-        echo "nameserver 8.8.4.4" | sudo tee -a /mnt/rpi/etc/resolv.conf
         
         sudo chroot /mnt/rpi /bin/bash << EOF
           set -e
@@ -96,11 +106,11 @@ jobs:
 
     - name: Unmount image
       run: |
-        sudo umount /mnt/rpi/dev
-        sudo umount /mnt/rpi/sys
-        sudo umount /mnt/rpi/proc
-        sudo umount /mnt/rpi
-        sudo losetup -d ${LOOP_DEVICE}
+        sudo umount /mnt/rpi/dev || true
+        sudo umount /mnt/rpi/sys || true
+        sudo umount /mnt/rpi/proc || true
+        sudo umount /mnt/rpi || true
+        sudo losetup -d ${LOOP_DEVICE} || true
           
     - name: Compress image
       run: xz -z ubuntu-22.04.4-preinstalled-server-arm64+raspi.img
