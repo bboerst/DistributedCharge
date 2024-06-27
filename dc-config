@@ -1,0 +1,172 @@
+#!/bin/bash
+
+CONFIG_FILE="/Users/brian/Downloads/DC_Config.yaml"
+INTERACTIVE=True
+ASK_TO_REBOOT=0
+
+# Calculate terminal size for whiptail
+calc_wt_size() {
+  WT_HEIGHT=22
+  WT_WIDTH=$(tput cols)
+
+  if [ -z "$WT_WIDTH" ] || [ "$WT_WIDTH" -lt 60 ]; then
+    WT_WIDTH=80
+  fi
+  if [ "$WT_WIDTH" -gt 178 ]; then
+    WT_WIDTH=120
+  fi
+  WT_MENU_HEIGHT=$((WT_HEIGHT-7))
+}
+
+do_finish() {
+  if [ $ASK_TO_REBOOT -eq 1 ]; then
+    whiptail --yesno "Would you like to reboot now?" 20 60 2
+    if [ $? -eq 0 ]; then # yes
+      sync
+      reboot
+    fi
+  fi
+  exit 0
+}
+
+update_yaml() {
+  local section=$1
+  local key=$2
+  local value=$3
+  sed -i "/$section:/,/^[^ ]/ s/^\($key:\).*$/\1 $value/" "$CONFIG_FILE"
+}
+
+get_yaml_value() {
+  local section=$1
+  local key=$2
+  sed -n "/$section:/,/^[^ ]/ s/^\($key:\)\s*\(.*\)$/\2/p" "$CONFIG_FILE" | sed 's/^ *//; s/ *$//'
+}
+
+do_seller_menu() {
+  while true; do
+    FUN=$(whiptail --title "Configuration Utility" --menu "Seller Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
+      "S1 LNDhost" "$(get_yaml_value Seller LNDhost)" \
+      "S2 PrintWarningMessages" "$(get_yaml_value Seller PrintWarningMessages)" \
+      "S3 RemoteClientIdentifier" "$(get_yaml_value Seller RemoteClientIdentifier)" \
+      "S4 LocalMeterNumber" "$(get_yaml_value Seller LocalMeterNumber)" \
+      "S5 LocalMeterScalingFactor" "$(get_yaml_value Seller LocalMeterScalingFactor)" \
+      "S6 RS485Port" "$(get_yaml_value Seller RS485Port)" \
+      "S7 SWCANname" "$(get_yaml_value Seller SWCANname)" \
+      3>&1 1>&2 2>&3)
+    RET=$?
+    if [ $RET -eq 1 ]; then
+      return
+    elif [ $RET -eq 0 ]; then
+      case "$FUN" in
+        S1\ *) do_set_value "Seller" "LNDhost" "Enter LNDhost (format: HostNameOrIPAddress:TCPPORT)" ;;
+        S2\ *) do_toggle_boolean "Seller" "PrintWarningMessages" ;;
+        S3\ *) do_set_value "Seller" "RemoteClientIdentifier" "Enter RemoteClientIdentifier" ;;
+        S4\ *) do_set_value "Seller" "LocalMeterNumber" "Enter LocalMeterNumber" ;;
+        S5\ *) do_set_value "Seller" "LocalMeterScalingFactor" "Enter LocalMeterScalingFactor" ;;
+        S6\ *) do_set_value "Seller" "RS485Port" "Enter RS485Port" ;;
+        S7\ *) do_set_value "Seller" "SWCANname" "Enter SWCANname" ;;
+        *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
+      esac
+    fi
+  done
+}
+
+do_buyer_menu() {
+  while true; do
+    FUN=$(whiptail --title "Configuration Utility" --menu "Buyer Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
+      "B1 LNDhost" "$(get_yaml_value Buyer LNDhost)" \
+      "B2 PrintWarningMessages" "$(get_yaml_value Buyer PrintWarningMessages)" \
+      "B3 LocalClientIdentifier" "$(get_yaml_value Buyer LocalClientIdentifier)" \
+      "B4 RS485Port" "$(get_yaml_value Buyer RS485Port)" \
+      "B5 LocalMeterNumber" "$(get_yaml_value Buyer LocalMeterNumber)" \
+      "B6 LocalMeterScalingFactor" "$(get_yaml_value Buyer LocalMeterScalingFactor)" \
+      "B7 RemoteMeterNumber" "$(get_yaml_value Buyer RemoteMeterNumber)" \
+      "B8 RemoteHost" "$(get_yaml_value Buyer RemoteHost)" \
+      "B9 RemoteFingerPrintToTrust" "$(get_yaml_value Buyer RemoteFingerPrintToTrust)" \
+      "B10 SWCANname" "$(get_yaml_value Buyer SWCANname)" \
+      "B11 TWCANname" "$(get_yaml_value Buyer TWCANname)" \
+      3>&1 1>&2 2>&3)
+    RET=$?
+    if [ $RET -eq 1 ]; then
+      return
+    elif [ $RET -eq 0 ]; then
+      case "$FUN" in
+        B1\ *) do_set_value "Buyer" "LNDhost" "Enter LNDhost (format: HostNameOrIPAddress:TCPPORT)" ;;
+        B2\ *) do_toggle_boolean "Buyer" "PrintWarningMessages" ;;
+        B3\ *) do_set_value "Buyer" "LocalClientIdentifier" "Enter LocalClientIdentifier" ;;
+        B4\ *) do_set_value "Buyer" "RS485Port" "Enter RS485Port" ;;
+        B5\ *) do_set_value "Buyer" "LocalMeterNumber" "Enter LocalMeterNumber" ;;
+        B6\ *) do_set_value "Buyer" "LocalMeterScalingFactor" "Enter LocalMeterScalingFactor" ;;
+        B7\ *) do_set_value "Buyer" "RemoteMeterNumber" "Enter RemoteMeterNumber" ;;
+        B8\ *) do_set_value "Buyer" "RemoteHost" "Enter RemoteHost" ;;
+        B9\ *) do_set_value "Buyer" "RemoteFingerPrintToTrust" "Enter RemoteFingerPrintToTrust" ;;
+        B10\ *) do_set_value "Buyer" "SWCANname" "Enter SWCANname" ;;
+        B11\ *) do_set_value "Buyer" "TWCANname" "Enter TWCANname" ;;
+        *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
+      esac
+    fi
+  done
+}
+
+do_set_value() {
+  local section=$1
+  local key=$2
+  local prompt=$3
+  local current_value=$(get_yaml_value $section $key)
+  local new_value=$(whiptail --inputbox "$prompt" 20 60 "$current_value" 3>&1 1>&2 2>&3)
+  RET=$?
+  if [ $RET -eq 0 ]; then
+    if [ "$new_value" != "$current_value" ]; then
+      update_yaml $section $key "$new_value"
+      whiptail --msgbox "$key updated successfully" 20 60 1
+    else
+      whiptail --msgbox "No changes made to $key" 20 60 1
+    fi
+  else
+    whiptail --msgbox "Operation cancelled. $key not updated." 20 60 1
+  fi
+}
+
+do_toggle_boolean() {
+  local section=$1
+  local key=$2
+  local current_value=$(get_yaml_value $section $key)
+  if [ "$current_value" = "True" ]; then
+    new_value="False"
+  else
+    new_value="True"
+  fi
+  if (whiptail --title "Toggle $key" --yesno "Current value: $current_value\nDo you want to change it to $new_value?" 10 60); then
+    update_yaml $section $key $new_value
+    whiptail --msgbox "$key set to $new_value" 20 60 1
+  else
+    whiptail --msgbox "Operation cancelled. $key not updated." 20 60 1
+  fi
+}
+
+# Main function
+do_main_menu() {
+  calc_wt_size
+
+  while true; do
+    FUN=$(whiptail --title "Configuration Utility" --menu "Main Menu" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Finish --ok-button Select \
+      "1 Seller Options" "Configure Seller settings" \
+      "2 Buyer Options" "Configure Buyer settings" \
+      3>&1 1>&2 2>&3)
+    RET=$?
+    if [ $RET -eq 1 ]; then
+      do_finish
+    elif [ $RET -eq 0 ]; then
+      case "$FUN" in
+        1\ *) do_seller_menu ;;
+        2\ *) do_buyer_menu ;;
+        *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
+      esac
+    else
+      exit 1
+    fi
+  done
+}
+
+# Run the main menu
+do_main_menu
